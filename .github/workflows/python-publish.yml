@@ -10,6 +10,11 @@ jobs:
     deploy:
         runs-on: ubuntu-latest
 
+        # Add permissions for trusted publishing (optional but recommended)
+        permissions:
+            id-token: write
+            contents: read
+
         steps:
             - uses: actions/checkout@v4
             - uses: actions/setup-node@v3
@@ -37,10 +42,18 @@ jobs:
             #   run: |
             #       uv build
             #       uv publish --username=${{ secrets.PYPI_USERNAME }} --password=${{ secrets.PYPI_PASSWORD }}
-            - name: Build and publish to PyPI
+            # - name: Build and publish to PyPI
+            #   env:
+            #     TWINE_USERNAME: "__token__"
+            #     TWINE_PASSWORD: "${{ secrets.PYPI_API_TOKEN }}"
+            #   run: |
+            #     uv build
+            #     uv publish
+            - name: Build the package
+              run: uv build
+              
+            - name: Publish to PyPI
               env:
-                TWINE_USERNAME: "__token__"
-                TWINE_PASSWORD: "${{ secrets.PYPI_API_TOKEN }}"
-              run: |
-                uv build
-                uv publish
+                # Use UV_PUBLISH_TOKEN instead of TWINE variables
+                UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+              run: uv publish
