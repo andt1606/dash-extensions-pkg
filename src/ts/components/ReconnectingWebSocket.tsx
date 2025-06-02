@@ -413,7 +413,7 @@ const ReconnectingWebSocket: React.FC<ReconnectingWebSocketProps> = ({
     return () => {
       disconnect();
     };
-  }, [url, settings.automaticOpen, openConnection, disconnect]);
+  }, [url]);
 
   // Handle message sending when send prop changes
   useEffect(() => {
