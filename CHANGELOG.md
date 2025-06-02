@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.5] - 02-06-25
+
+-   Add ReconnectingWebSocket component
+
 ## [2.0.4] - 22-04-25
 
 ### Changed
