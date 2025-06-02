@@ -26,13 +26,13 @@ jobs:
                   enable-cache: true
             - name: Install the project
               run: uv sync --all-extras --dev
-            - name: Build and publish to npm
-              run: |
-                  uv run npm install | echo "Ignore npm install error"
-                  uv run npm run build
-                  # uv run npm publish
-              env:
-                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+            # - name: Build and publish to npm
+            #   run: |
+            #       uv run npm install | echo "Ignore npm install error"
+            #       uv run npm run build
+            #       uv run npm publish
+            #   env:
+            #       NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
             - name: Build and publish to pypi
               run: |
                   uv build
