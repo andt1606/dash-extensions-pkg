@@ -1,0 +1,5 @@
+recursive-include dash_extensions_pkg/** *.js *.css *.json *.html
+include README.md
+include LICENSE
+include package.json
+prune tests
