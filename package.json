@@ -1,6 +1,6 @@
 {
   "name": "dash-extensions-pkg",
-  "version": "2.0.6",
+  "version": "2.0.7",
   "description": "Extensions for Plotly Dash.",
   "main": "index.ts",
   "scripts": {
