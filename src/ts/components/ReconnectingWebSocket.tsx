@@ -78,24 +78,8 @@ export interface ReconnectingWebSocketProps {
 
 /**
  * A WebSocket interface with automatic reconnection capabilities.
- * This component combines the Dash-compatible interface with robust reconnection logic.
- * 
- * Example usage:
- * ```python
- * import dash_extensions_demo as ded
- * 
- * app.layout = html.Div([
- *     ded.ReconnectingWebSocket(
- *         id="ws",
- *         url="wss://echo.websocket.org",
- *         reconnectOptions={
- *             "debug": True,
- *             "reconnectInterval": 1000,
- *             "maxReconnectAttempts": 5
- *         }
- *     )
- * ])
- * ```
+ * This component follows the proven patterns from reconnecting-websocket.js
+ * to provide stable, predictable reconnection behavior.
  */
 const ReconnectingWebSocket: React.FC<ReconnectingWebSocketProps> = ({
   id,
@@ -107,15 +91,24 @@ const ReconnectingWebSocket: React.FC<ReconnectingWebSocketProps> = ({
   reconnectOptions = {},
   state = { readyState: WebSocket.CLOSED },
 }) => {
-  // Refs to maintain WebSocket instance and internal state
+  // Core WebSocket and state management refs
   const wsRef = useRef<WebSocket | null>(null);
   const prevSendRef = useRef<any>();
+  
+  // Reconnection control variables - these mirror the original library's approach
   const reconnectAttemptsRef = useRef<number>(0);
   const forcedCloseRef = useRef<boolean>(false);
-  const timeoutIdRef = useRef<NodeJS.Timeout | null>(null);
+  const timedOutRef = useRef<boolean>(false);
+  const isReconnectAttemptRef = useRef<boolean>(false);
+  
+  // Timeout management
+  const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Internal state management - this acts as our "buffer" like the original library
+  const currentReadyStateRef = useRef<number>(WebSocket.CLOSED);
 
-  // Default reconnection settings - matching the original library defaults
+  // Default settings matching the original library exactly
   const settings: Required<ReconnectingWebSocketOptions> = {
     debug: false,
     automaticOpen: true,
@@ -129,8 +122,8 @@ const ReconnectingWebSocket: React.FC<ReconnectingWebSocketProps> = ({
   };
 
   /**
-   * Utility function to create event data compatible with original WebSocket events
-   * This ensures that the data structure matches what developers expect from standard WebSocket events
+   * Creates event data that matches the original library's event structure
+   * This ensures compatibility and predictable event handling
    */
   const createEventData = useCallback((type: string, originalEvent?: any, additionalData?: any) => {
     const baseData = {
@@ -140,8 +133,8 @@ const ReconnectingWebSocket: React.FC<ReconnectingWebSocketProps> = ({
       ...additionalData
     };
     
+    // Copy relevant WebSocket event properties
     if (originalEvent) {
-      // Copy relevant properties from original event
       if ('origin' in originalEvent) baseData.origin = originalEvent.origin;
       if ('data' in originalEvent) baseData.data = originalEvent.data;
       if ('code' in originalEvent) baseData.code = originalEvent.code;
@@ -153,72 +146,98 @@ const ReconnectingWebSocket: React.FC<ReconnectingWebSocketProps> = ({
   }, []);
 
   /**
-   * Main function to establish WebSocket connection with reconnection logic
-   * This is the heart of our reconnection system - it handles both initial connections
-   * and reconnection attempts with exponential backoff
+   * Safe props setter that only updates when setProps is available
+   * This prevents errors during component cleanup
    */
-  const connect = useCallback((isReconnectAttempt: boolean = false) => {
-    if (!url || !setProps) {
+  const safeSetProps = useCallback((props: Record<string, any>) => {
+    if (setProps) {
+      setProps(props);
+    }
+  }, [setProps]);
+
+  /**
+   * Core connection function that follows the original library's pattern exactly
+   * The key improvement here is the reconnectAttempt flag that prevents duplicate events
+   */
+  const openConnection = useCallback((reconnectAttempt: boolean = false) => {
+    if (!url) {
       return;
     }
 
-    // Check if we've exceeded max reconnection attempts
-    if (isReconnectAttempt && settings.maxReconnectAttempts && 
-        reconnectAttemptsRef.current > settings.maxReconnectAttempts) {
-      if (settings.debug) {
-        console.debug('ReconnectingWebSocket: Max reconnection attempts reached');
+    // Check reconnection attempt limits - this mirrors the original's logic
+    if (reconnectAttempt) {
+      if (settings.maxReconnectAttempts && 
+          reconnectAttemptsRef.current > settings.maxReconnectAttempts) {
+        if (settings.debug) {
+          console.debug('ReconnectingWebSocket: Max reconnection attempts reached');
+        }
+        return;
       }
-      return;
-    }
-
-    // Create new WebSocket instance
-    const ws = new WebSocket(url, protocols || []);
-    ws.binaryType = settings.binaryType;
-    wsRef.current = ws;
-
-    // Set initial connecting state
-    if (!isReconnectAttempt) {
-      reconnectAttemptsRef.current = 0;
-      setProps({ 
+    } else {
+      // This is a fresh connection attempt, dispatch connecting event
+      safeSetProps({ 
         connecting: createEventData('connecting'),
         state: { readyState: WebSocket.CONNECTING }
       });
+      reconnectAttemptsRef.current = 0;
     }
+
+    // Set our internal state and flags
+    isReconnectAttemptRef.current = reconnectAttempt;
+    currentReadyStateRef.current = WebSocket.CONNECTING;
 
     if (settings.debug) {
       console.debug('ReconnectingWebSocket: attempt-connect', url);
     }
+
+    // Create the WebSocket connection
+    const ws = new WebSocket(url, protocols || []);
+    ws.binaryType = settings.binaryType;
+    wsRef.current = ws;
 
     // Set up connection timeout - this prevents hanging connections
     const connectionTimeout = setTimeout(() => {
       if (settings.debug) {
         console.debug('ReconnectingWebSocket: connection-timeout', url);
       }
+      timedOutRef.current = true;
       ws.close();
+      timedOutRef.current = false;
     }, settings.timeoutInterval);
 
-    timeoutIdRef.current = connectionTimeout;
+    connectionTimeoutRef.current = connectionTimeout;
 
-    // WebSocket event handlers
+    // WebSocket event handlers following the original library's pattern
+
     ws.onopen = (event) => {
-      if (timeoutIdRef.current) {
-        clearTimeout(timeoutIdRef.current);
-        timeoutIdRef.current = null;
+      // Clear the connection timeout since we successfully connected
+      if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
+        connectionTimeoutRef.current = null;
       }
 
       if (settings.debug) {
         console.debug('ReconnectingWebSocket: onopen', url);
       }
 
-      // Reset reconnection attempts on successful connection
+      // Update our internal state
+      currentReadyStateRef.current = WebSocket.OPEN;
       reconnectAttemptsRef.current = 0;
 
-      setProps({
+      // Create the open event with reconnection information
+      const openEventData = createEventData('open', event, { 
+        isReconnect: isReconnectAttemptRef.current 
+      });
+
+      safeSetProps({
         state: {
           readyState: WebSocket.OPEN,
-          ...createEventData('open', event, { isReconnect: isReconnectAttempt })
+          ...openEventData
         }
       });
+
+      // Reset the reconnection flag
+      isReconnectAttemptRef.current = false;
     };
 
     ws.onmessage = (event) => {
@@ -226,7 +245,7 @@ const ReconnectingWebSocket: React.FC<ReconnectingWebSocketProps> = ({
         console.debug('ReconnectingWebSocket: onmessage', url, event.data);
       }
 
-      setProps({
+      safeSetProps({
         message: createEventData('message', event)
       });
     };
@@ -236,202 +255,152 @@ const ReconnectingWebSocket: React.FC<ReconnectingWebSocketProps> = ({
         console.debug('ReconnectingWebSocket: onerror', url, event);
       }
 
-      setProps({
+      safeSetProps({
         error: createEventData('error', event)
       });
     };
 
-    // ws.onclose = (event) => {
-    //   console.log('WebSocket closed:', event?.code, event?.reason, event?.wasClean);
-    //   if (timeoutIdRef.current) {
-    //     clearTimeout(timeoutIdRef.current);
-    //     timeoutIdRef.current = null;
-    //   }
-
-    //   wsRef.current = null;
-
-    //   if (forcedCloseRef.current) {
-    //     // Connection was intentionally closed
-    //     setProps({
-    //       state: {
-    //         readyState: WebSocket.CLOSED,
-    //         ...createEventData('close', event)
-    //       }
-    //     });
-    //   } else {
-    //     // Connection lost - attempt to reconnect
-    //     if (settings.debug) {
-    //       console.debug('ReconnectingWebSocket: onclose', url);
-    //     }
-
-    //     setProps({
-    //       connecting: createEventData('connecting', event),
-    //       state: { readyState: WebSocket.CONNECTING }
-    //     });
-
-    //     // Calculate reconnection delay with exponential backoff
-    //     // This is crucial for not overwhelming the server with connection attempts
-    //     const delay = Math.min(
-    //       settings.reconnectInterval * Math.pow(settings.reconnectDecay, reconnectAttemptsRef.current),
-    //       settings.maxReconnectInterval
-    //     );
-
-    //     if (settings.debug) {
-    //       console.debug(`ReconnectingWebSocket: Scheduling reconnection in ${delay}ms`);
-    //     }
-
-    //     reconnectTimeoutRef.current = setTimeout(() => {
-    //       reconnectAttemptsRef.current++;
-    //       connect(true);
-    //     }, delay);
-    //   }
-    // };
+    // This is the critical onclose handler that implements the original's stable behavior
     ws.onclose = (event) => {
-      console.log('WebSocket closed:', event.code, event.reason, event.wasClean);
-      if (timeoutIdRef.current) {
-        clearTimeout(timeoutIdRef.current);
-        timeoutIdRef.current = null;
+      console.log('ReconnectingWebSocket: onclose', url, event?.code, event?.reason);
+      // Clean up connection timeout
+      if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
+        connectionTimeoutRef.current = null;
       }
 
+      // Clear the WebSocket reference
       wsRef.current = null;
 
-      // Add this check to prevent reconnection loops
-      if (forcedCloseRef.current || event.code === 1000) {
-        // 1000 = normal closure, don't reconnect
-        setProps({
+      if (settings.debug) {
+        console.debug('ReconnectingWebSocket: onclose', url, event.code, event.reason);
+      }
+
+      if (forcedCloseRef.current) {
+        // This was an intentional close - set final state and stop
+        currentReadyStateRef.current = WebSocket.CLOSED;
+        safeSetProps({
           state: {
             readyState: WebSocket.CLOSED,
             ...createEventData('close', event)
           }
         });
-        return;
-      }
-
-      // Only reconnect if this wasn't a forced close and we haven't exceeded attempts
-      if (settings.maxReconnectAttempts === null || 
-          reconnectAttemptsRef.current < settings.maxReconnectAttempts) {
+      } else {
+        // This was an unexpected close - handle reconnection
+        currentReadyStateRef.current = WebSocket.CONNECTING;
         
-        if (settings.debug) {
-          console.debug('ReconnectingWebSocket: onclose, attempting reconnect', event.code, event.reason);
-        }
-
-        setProps({
-          connecting: createEventData('connecting', event),
+        // Create connecting event with close information
+        const connectingEvent = createEventData('connecting', event);
+        safeSetProps({
+          connecting: connectingEvent,
           state: { readyState: WebSocket.CONNECTING }
         });
 
+        // Key improvement: Only dispatch close event if this wasn't a reconnection attempt
+        // This prevents the cascade of close events that was causing your mixed error patterns
+        if (!isReconnectAttemptRef.current && !timedOutRef.current) {
+          if (settings.debug) {
+            console.debug('ReconnectingWebSocket: dispatching close event for initial connection loss');
+          }
+          safeSetProps({
+            state: {
+              readyState: WebSocket.CONNECTING,
+              ...createEventData('close', event)
+            }
+          });
+        }
+
+        // Calculate reconnection delay with exponential backoff
         const delay = Math.min(
           settings.reconnectInterval * Math.pow(settings.reconnectDecay, reconnectAttemptsRef.current),
           settings.maxReconnectInterval
         );
 
+        if (settings.debug) {
+          console.debug(`ReconnectingWebSocket: Scheduling reconnection attempt ${reconnectAttemptsRef.current + 1} in ${delay}ms`);
+        }
+
+        // Schedule the reconnection attempt
         reconnectTimeoutRef.current = setTimeout(() => {
           reconnectAttemptsRef.current++;
-          connect(true);
+          openConnection(true);
         }, delay);
       }
     };
-  }, [url, protocols, settings, setProps, createEventData]);
+  }, [url, protocols, settings, safeSetProps, createEventData]);
 
   /**
-   * Clean up WebSocket connection and clear timeouts
-   * This is essential for preventing memory leaks
+   * Clean disconnection function that properly manages all state
    */
   const disconnect = useCallback(() => {
-    // Clear any pending timeouts
-    if (timeoutIdRef.current) {
-      clearTimeout(timeoutIdRef.current);
-      timeoutIdRef.current = null;
+    // Set forced close flag to prevent reconnection
+    forcedCloseRef.current = true;
+
+    // Clear all timeouts
+    if (connectionTimeoutRef.current) {
+      clearTimeout(connectionTimeoutRef.current);
+      connectionTimeoutRef.current = null;
     }
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
     }
 
-    // Close WebSocket connection
+    // Close WebSocket if it exists
     if (wsRef.current) {
-      forcedCloseRef.current = true;
       wsRef.current.close();
-      wsRef.current = null;
     }
   }, []);
 
   /**
-   * Send message through WebSocket with connection state handling
-   * This function is intelligent - it will attempt to reconnect if needed
+   * Enhanced send function with better connection state handling
    */
   const sendMessage = useCallback(async (message: any) => {
     if (!setProps) return;
 
-    // If connection is closed, attempt to reconnect
-    if (state.readyState === WebSocket.CLOSED) {
-      if (settings.debug) {
-        console.log('ReconnectingWebSocket: Connection CLOSED. Attempting to reconnect...');
-      }
-      forcedCloseRef.current = false;
-      connect(false);
-      // Wait briefly for connection attempt
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-
-    // If connection is still connecting, wait for timeout period
-    if (state.readyState === WebSocket.CONNECTING) {
-      if (settings.debug) {
-        console.log('ReconnectingWebSocket: Connection CONNECTING. Waiting...');
-      }
-      await new Promise(resolve => setTimeout(resolve, timeout));
-    }
-
-    // Send message if connection is open
-    if (state.readyState === WebSocket.OPEN && wsRef.current) {
+    // Check if we have an active connection
+    if (currentReadyStateRef.current === WebSocket.OPEN && wsRef.current) {
       try {
         wsRef.current.send(message);
         if (settings.debug) {
-          console.debug('ReconnectingWebSocket: Message sent', message);
+          console.debug('ReconnectingWebSocket: Message sent successfully', message);
         }
+        return;
       } catch (error) {
         if (settings.debug) {
           console.error('ReconnectingWebSocket: Send failed', error);
         }
       }
-    } else {
+    }
+
+    // If we reach here, the connection isn't ready
+    if (settings.debug) {
+      console.log(`ReconnectingWebSocket: Cannot send message - connection state: ${currentReadyStateRef.current}`);
+    }
+
+    // Optionally attempt to reconnect if connection is closed
+    if (currentReadyStateRef.current === WebSocket.CLOSED) {
       if (settings.debug) {
-        console.log('ReconnectingWebSocket: Unable to send message - connection not ready');
+        console.log('ReconnectingWebSocket: Attempting to reconnect for message send');
       }
+      forcedCloseRef.current = false;
+      openConnection(false);
     }
-  }, [state.readyState, timeout, settings.debug, connect, setProps]);
+  }, [settings.debug, openConnection, setProps]);
 
-  // Initialize connection when URL changes
-  // useEffect(() => {
-  //   disconnect(); // Clean up any existing connection
-  //   forcedCloseRef.current = false;
-    
-  //   if (url && settings.automaticOpen) {
-  //     connect(false);
-  //   }
-
-  //   // Cleanup function - this runs when component unmounts or dependencies change
-  //   return () => {
-  //     disconnect();
-  //   };
-  // }, [url, protocols, connect, disconnect, settings.automaticOpen]);
+  // Initialize connection when component mounts or URL changes
   useEffect(() => {
-    // Don't disconnect existing connections unnecessarily
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && wsRef.current.url === url) {
-      return; // Connection is already good, don't recreate it
-    }
-    
-    disconnect(); // Only disconnect if we need a new connection
+    // Reset forced close flag for new connections
     forcedCloseRef.current = false;
     
     if (url && settings.automaticOpen) {
-      // Add a small delay to prevent rapid reconnection attempts
-      const connectTimeout = setTimeout(() => {
-        connect(false);
-      }, 100);
+      // Add a small delay to prevent rapid reconnection in development
+      const initTimeout = setTimeout(() => {
+        openConnection(false);
+      }, 50);
       
       return () => {
-        clearTimeout(connectTimeout);
+        clearTimeout(initTimeout);
         disconnect();
       };
     }
@@ -439,12 +408,11 @@ const ReconnectingWebSocket: React.FC<ReconnectingWebSocketProps> = ({
     return () => {
       disconnect();
     };
-  }, [url]); // Remove protocols and other dependencies that cause unnecessary reconnections
+  }, [url, settings.automaticOpen, openConnection, disconnect]);
 
-  // Handle sending messages when 'send' prop changes
+  // Handle message sending when send prop changes
   useEffect(() => {
-    // Only send if the send prop has actually changed
-    // This prevents unnecessary message sends on every render
+    // Only process if send prop actually changed
     if (prevSendRef.current === send) {
       return;
     }
@@ -455,15 +423,13 @@ const ReconnectingWebSocket: React.FC<ReconnectingWebSocketProps> = ({
     }
   }, [send, sendMessage]);
 
-  // Cleanup on component unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       disconnect();
     };
   }, [disconnect]);
 
-  // This component doesn't render anything - it's purely for WebSocket management
-  // This is common for utility components in Dash
   return null;
 };
 
