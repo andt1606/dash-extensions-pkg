@@ -441,6 +441,12 @@ const ReconnectingWebSocket: React.FC<ReconnectingWebSocketProps> = ({
 
   // Initialize connection when component mounts or URL changes
   useEffect(() => {
+    // Don't disconnect existing connections unnecessarily
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && wsRef.current.url === url) {
+      return; // Connection is already good, don't recreate it
+    }
+    disconnect(); // Only disconnect if we need a new connection
+    
     forcedCloseRef.current = false;
     
     if (url && settings.automaticOpen) {
@@ -458,7 +464,7 @@ const ReconnectingWebSocket: React.FC<ReconnectingWebSocketProps> = ({
     return () => {
       disconnect();
     };
-  }, [url, settings.automaticOpen, openConnection, disconnect]);
+  }, [url]);
 
   // Handle message sending when send prop changes
   useEffect(() => {
