@@ -33,7 +33,14 @@ jobs:
             #       uv run npm publish
             #   env:
             #       NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-            - name: Build and publish to pypi
+            # - name: Build and publish to pypi
+            #   run: |
+            #       uv build
+            #       uv publish --username=${{ secrets.PYPI_USERNAME }} --password=${{ secrets.PYPI_PASSWORD }}
+            - name: Build and publish to PyPI
+              env:
+                TWINE_USERNAME: "__token__"
+                TWINE_PASSWORD: "${{ secrets.PYPI_API_TOKEN }}"
               run: |
-                  uv build
-                  uv publish --username=${{ secrets.PYPI_USERNAME }} --password=${{ secrets.PYPI_PASSWORD }}
+                uv build
+                uv publish
