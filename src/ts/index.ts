@@ -7,7 +7,7 @@ import Keyboard from './components/Keyboard';
 import Purify from './components/Purify';
 import SSE from './components/SSE';
 import WebSocket from './components/WebSocket';
-import ReconnectingWebSocket from 'components/ReconnectWebSocket';
+import ReconnectingWebSocket from './components/ReconnectingWebSocket';
 import Lottie from './components/Lottie';
 import Mermaid from './components/Mermaid';
 import Loading from './components/Loading';

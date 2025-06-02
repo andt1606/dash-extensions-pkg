@@ -49,9 +49,12 @@ jobs:
             #   run: |
             #     uv build
             #     uv publish
+            - name: Build npm package
+              run: |
+                  uv run npm install | echo "Ignore npm install error"
+                  uv run npm run build
             - name: Build the package
               run: uv build
-              
             - name: Publish to PyPI
               env:
                 # Use UV_PUBLISH_TOKEN instead of TWINE variables

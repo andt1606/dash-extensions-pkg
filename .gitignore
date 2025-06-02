@@ -280,7 +280,6 @@ Manifest.toml
 JuliaManifest.toml
 
 # Generated files
-dash_extensions/*
 **/file_system_backend/*
 
 # R
